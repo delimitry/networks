@@ -171,6 +171,7 @@ def ping(addr):
     print('request: {}'.format(full_payload.hex() if PY3 else full_payload.encode('hex')))
 
     response = ''
+    s = None
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.getprotobyname('icmp'))
         s.settimeout(1)
@@ -181,6 +182,9 @@ def ping(addr):
     except Exception as ex:
         print(ex)
         return
+    finally:
+        if s:
+            s.close()
     if not response:
         return
     print('response: {}'.format(response.hex() if PY3 else response.encode('hex')))

@@ -135,14 +135,14 @@ def make_ping_request():
     id_value = random.randint(0, 0xffff)
     seq_num_value = 1
     data = struct.pack('>BBHHI', type_value, code_value, checksum_value, id_value, seq_num_value)
-    str_buffer = StringIO(data.decode('latin') if PY3 else data)
+    str_buffer = StringIO(data.decode('latin'))
     # update checksum
     chunks_16bits = []
     while True:
         value = str_buffer.read(2)
         if not value:
             break
-        chunks_16bits.append(struct.unpack('H', value.encode('latin') if PY3 else value)[0])
+        chunks_16bits.append(struct.unpack('H', value.encode('latin'))[0])
     checksum_value = icmp_checksum(chunks_16bits)
     lst_data = list(data)
     if lst_data:

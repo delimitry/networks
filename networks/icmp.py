@@ -65,7 +65,7 @@ class IPv4Header(BigEndianStructure):
             elif k[0] in ('protocol'):
                 out += indent_verbose_fmt.format(k[0], value, protocols.get(value, '?'))
             else:
-                out += indent_fmt.format(k[0], getattr(self, k[0]))
+                out += indent_fmt.format(k[0], value)
         return out.rstrip()
 
 

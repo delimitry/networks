@@ -94,8 +94,11 @@ def oid_to_bytes(oid):
     """Convert OID str to bytes"""
     if oid.startswith('iso'):
         oid = oid.replace('iso', '1')
-    oid_values = [int(x) for x in oid.split('.') if x]
-    first_val = 40 * oid_values[0] + oid_values[1]
+    try:
+        oid_values = [int(x) for x in oid.split('.') if x]
+        first_val = 40 * oid_values[0] + oid_values[1]
+    except (ValueError, IndexError):
+        raise Exception('Could not parse OID value "{}"'.format(oid))
     result_values = [first_val]
     for x in oid_values[2:]:
         result_values += encode_to_7bit(x)
@@ -406,7 +409,7 @@ def parse_snmp(message):
     return _parse_asn1(stream)
 
 
-def snmp_get(ip, oid, version=1, community='public'):
+def snmp_get(ip, port, oid, version=1, community='public'):
     """SNMP get OID value from SNMP agent with IP"""
     try:
         res = make_snmp_get_oid_request(oid, version=version, community=community)
@@ -418,7 +421,7 @@ def snmp_get(ip, oid, version=1, community='public'):
     host = ip
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.settimeout(5)
-    sock.connect((host, 161))
+    sock.connect((host, port))
     try:
         sock.send(res)
         response = sock.recv(4096)
@@ -433,19 +436,15 @@ def snmp_get(ip, oid, version=1, community='public'):
     return '', ''
 
 
-def snmp_get_next(ip, oid, version=1, community='public'):
+def snmp_get_next(ip, port, oid, version=1, community='public'):
     """SNMP get OID value or subtree of OIDs from SNMP agent with IP"""
-    try:
-        res = make_snmp_get_next_oid_request(oid, version=version, community=community)
-    except Exception as ex:
-        print(ex)
-        return
+    res = make_snmp_get_next_oid_request(oid, version=version, community=community)
     log('SNMP get next OID request:')
     log(res.hex() if PY3 else res.encode('hex'))
     host = ip
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.settimeout(5)
-    sock.connect((host, 161))
+    sock.connect((host, port))
     try:
         sock.send(res)
         response = sock.recv(4096)
@@ -456,7 +455,7 @@ def snmp_get_next(ip, oid, version=1, community='public'):
     except socket.timeout as ex:
         raise ex
     except Exception as ex:
-        print(ex)
+        raise ex
     return '', ''
 
 
@@ -465,13 +464,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-v', '--version', dest='version', help='SNMP version', default='2c')
     parser.add_argument('-c', '--community', dest='community', help='community for versions 1 and 2c', default='public')
-    parser.add_argument('ip', help='SNMP agent IP address')
+    parser.add_argument('ip', help='SNMP agent IP[:port] address')
     parser.add_argument('oid', help='OID')
 
     args = parser.parse_args()
     if (args.version in ['1', 'v1', '2', '2c', 'v2', 'v2c'] and not args.community) or (not args.ip or not args.oid):
         parser.print_help()
         exit(1)
+
+    # get ip and port if present
+    agent_address = args.ip
+    ip = agent_address
+    port = 161
+    if ':' in agent_address:
+        if agent_address.count(':') == 1:
+            try:
+                ip, port = agent_address.split(':')
+                port = int(port)
+            except ValueError:
+                ip = agent_address.split(':')[0]
+        else:
+            print('Invalid SNMP agent address')
+            parser.print_help()
+            exit(1)
 
     # update oid value
     orig_oid = args.oid
@@ -481,11 +496,12 @@ def main():
     try:
         oid = orig_oid
         while True:
-            next_oid, type_value = snmp_get_next(args.ip, oid, version=args.version, community=args.community)
+            next_oid, type_value = snmp_get_next(ip, port, oid, version=args.version, community=args.community)
             if not next_oid or not isinstance(next_oid, (tuple, list)) or len(next_oid) < 2:
                 break
             # handle next OID request get (stop on full OID's sub tree scan)
-            if orig_oid + '.' not in next_oid[1]:
+            if not next_oid[1].startswith(orig_oid + '.'):
+                # print('{} = No Such Object with this OID'.format(args.oid))
                 break
             if oid == next_oid[1]:
                 break
@@ -502,6 +518,8 @@ def main():
     except socket.timeout:
         print('Timeout: No Response from {}'.format(args.ip))
     except KeyboardInterrupt:
+        pass
+    except Exception:
         pass
 
 
